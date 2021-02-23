@@ -1,5 +1,5 @@
 # 交叉编译器选择(没有则注释掉)
-#cross=arm-linux-gnueabihf
+#cross:=arm-linux-gnueabihf
 
 # 编译器配置
 CC:=gcc
@@ -37,7 +37,7 @@ obj += ${patsubst %.c,$(DIR_OBJ)/%.o,${notdir ${wildcard $(DIR_SRC)/*.c}}}
 target: $(obj)
 	@$(CC) -Wall -o app $(obj) $(INC) $(LIBS) $(LIBS_INC) $(LIBS_PATH)
 clean:
-	@rm ./obj/* app out.* -rf
+	@rm ./obj/* app -rf
 cleanall: clean
 	@rm ./libs/* -rf
 
