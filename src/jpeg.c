@@ -10,10 +10,10 @@
  *      image_buffer : 原始数据
  *      width : 宽(像素)
  *      height : 高(像素)
- *      per : 每像素字节数
+ *      pixelBytes : 每像素字节数
  *  返回 : 0成功 -1失败
  */
-int jpeg_create(char *fileOutput, unsigned char *image_buffer, int width, int height, int pw)
+int jpeg_create(char *fileOutput, unsigned char *image_buffer, int width, int height, int pixelBytes)
 {
     struct jpeg_compress_struct cinfo;
     struct jpeg_error_mgr jerr;
@@ -36,7 +36,7 @@ int jpeg_create(char *fileOutput, unsigned char *image_buffer, int width, int he
     //压缩参数设置
     cinfo.image_width = width; // image width and height, in pixels
     cinfo.image_height = height;
-    cinfo.input_components = pw;    // # of color components per pixel
+    cinfo.input_components = pixelBytes;    // # of color components pixelBytes pixel
     cinfo.in_color_space = JCS_RGB; // colorspace of input image
     jpeg_set_defaults(&cinfo);
 
@@ -47,7 +47,7 @@ int jpeg_create(char *fileOutput, unsigned char *image_buffer, int width, int he
     jpeg_start_compress(&cinfo, TRUE);
 
     //逐行扫描数据
-    row_stride = width * pw;
+    row_stride = width * pixelBytes;
     while (cinfo.next_scanline < cinfo.image_height)
     {
         // printf("next_scanline = %d\r\n", cinfo.next_scanline);
@@ -67,14 +67,13 @@ int jpeg_create(char *fileOutput, unsigned char *image_buffer, int width, int he
  *  bmp 图片数据获取
  *  参数:
  *      fileInput : 路径
- *      retBuffSize : 返回图片数据字节数, 不接收置NULL
  *      width : 返回图片宽(像素), 不接收置NULL
  *      height : 返回图片高(像素), 不接收置NULL
- *      per : 返回图片每像素的字节数, 不接收置NULL
+ *      pixelBytes : 返回图片每像素的字节数, 不接收置NULL
  * 
  *  返回 : 图片数据指针, 已分配内存, 用完记得释放
  */
-unsigned char *jpeg_get(char *fileInput, int *retBuffSize, int *width, int *height, int *pw)
+unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelBytes)
 {
     struct jpeg_decompress_struct cinfo;
     struct jpeg_error_mgr jerr;
@@ -107,13 +106,8 @@ unsigned char *jpeg_get(char *fileInput, int *retBuffSize, int *width, int *heig
         *width = cinfo.output_width;
     if (height)
         *height = cinfo.output_height;
-    if (pw)
-        *pw = cinfo.output_components;
-    if (retBuffSize)
-        *retBuffSize =
-            cinfo.output_width *
-            cinfo.output_height *
-            cinfo.output_components;
+    if (pixelBytes)
+        *pixelBytes = cinfo.output_components;
 
     //计算图片RGB数据大小,并分配内存
     retBuff = (unsigned char *)calloc(

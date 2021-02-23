@@ -37,7 +37,7 @@ obj += ${patsubst %.c,$(DIR_OBJ)/%.o,${notdir ${wildcard $(DIR_SRC)/*.c}}}
 target: $(obj)
 	@$(CC) -Wall -o app $(obj) $(INC) $(LIBS) $(LIBS_INC) $(LIBS_PATH)
 clean:
-	@rm ./obj/* app -rf
+	@rm ./obj/* app out.* -rf
 cleanall: clean
 	@rm ./libs/* -rf
 
