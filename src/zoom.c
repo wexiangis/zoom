@@ -42,7 +42,8 @@ void _zoom_linear(
     float errUp, errDown, errLeft, errRight;
     int x1, x2, y1, y2;
     float xStep, yStep, xDiv, yDiv;
-    int x, y, offset;
+    int x, y;
+    int offset = 0;
 
     //步宽计算(注意谁除以谁,这里表示的是在输出图像上每跳动一行、列等价于源图像跳过的行、列量)
     xDiv = (float)width / outWidth;
@@ -51,9 +52,6 @@ void _zoom_linear(
     //列像素遍历
     for (y = 0, yStep = 0; y < outHeight; y += 1, yStep += yDiv)
     {
-        //行地址计数
-        offset = y * outWidth * 3;
-
         //上下2个相邻点: 距离计算
         floorY = floor(yStep);
         ceilY = ceil(yStep);
@@ -67,7 +65,7 @@ void _zoom_linear(
             y2 -= 1;
 
         //行像素遍历
-        for (x = 0, xStep = 0; x < outWidth; x += 1, xStep += xDiv, offset += 3)
+        for (x = 0, xStep = 0; x < outWidth; x += 1, xStep += xDiv)
         {
             //左右2个相邻点: 距离计算
             floorX = floor(xStep);
@@ -92,6 +90,8 @@ void _zoom_linear(
                 errLeft,
                 errRight,
                 &outRgb[offset]);
+
+            offset += 3;
         }
     }
 }
@@ -105,7 +105,8 @@ void _zoom_near(
     int xSrc, ySrc;
     float xStep, yStep, xDiv, yDiv;
 
-    int x, y, offset, offsetSrc;
+    int x, y;
+    int offset = 0, offsetSrc = 0;
 
     //步宽计算(注意谁除以谁,这里表示的是在输出图像上每跳动一行、列等价于源图像跳过的行、列量)
     xDiv = (float)width / outWidth;
@@ -114,9 +115,6 @@ void _zoom_near(
     //列像素遍历
     for (y = 0, yStep = 0; y < outHeight; y += 1, yStep += yDiv)
     {
-        //行地址计数
-        offset = y * outWidth * 3;
-
         //最近y值
         ySrc = (int)round(yStep);
         if (ySrc == height)
