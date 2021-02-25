@@ -1,9 +1,10 @@
 #ifndef __ZOOM_H_
 #define __ZOOM_H_
 
-typedef enum {
+typedef enum
+{
     ZT_NEAR = 0, //最近点插值
-    ZT_LINEAR, //双线性插值
+    ZT_LINEAR,   //双线性插值
 } Zoom_Type;
 
 /*
