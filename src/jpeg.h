@@ -22,13 +22,13 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
  *  生成 bmp 图片
  *  参数:
  *      fileOutput : 路径
- *      image_buffer : 原始数据
+ *      rgb : 原始数据
  *      width : 宽(像素)
  *      height : 高(像素)
  *      pixelBytes : 每像素字节数
  *  返回 : 0成功 -1失败
  */
-int jpeg_create(char *fileOutput, unsigned char *image_buffer, int width, int height, int pixelBytes);
+int jpeg_create(char *fileOutput, unsigned char *rgb, int width, int height, int pixelBytes);
 
 #ifdef __cplusplus
 };

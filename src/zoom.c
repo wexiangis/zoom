@@ -85,23 +85,21 @@ void _zoom_linear(Zoom_Info *info)
     yDiv = (float)info->height / info->outHeight;
 
     //列像素遍历
-    for (y = startLine, yStep = startLine * yDiv; y < endLine; y += 1, yStep += yDiv)
+    for (y = startLine, yStep = startLine * yDiv,
+        offset = startLine * info->outWidth * 3; y < endLine; y += 1, yStep += yDiv)
     {
-        //行地址计数
-        offset = y * info->outWidth * 3;
-
         //上下2个相邻点: 距离计算
         floorY = floor(yStep);
         ceilY = ceil(yStep);
         errUp = yStep - floorY;
-        errDown = 1 - errUp; // errDown = ceilY - yStep;
+        errDown = 1 - errUp;
 
         //上下2个相邻点: 序号
         y1 = (int)floorY;
         y2 = (int)ceilY;
         if (y2 == info->height)
             y2 -= 1;
-    
+
         //避免下面for循环中重复该乘法
         y1 *= info->width;
         y2 *= info->width;
@@ -113,7 +111,7 @@ void _zoom_linear(Zoom_Info *info)
             floorX = floor(xStep);
             ceilX = ceil(xStep);
             errLeft = xStep - floorX;
-            errRight = 1 - errLeft; // errRight = ceilX - xStep;
+            errRight = 1 - errLeft;
 
             //左右2个相邻点: 序号
             x1 = (int)floorX;
@@ -158,16 +156,14 @@ void _zoom_near(Zoom_Info *info)
     yDiv = (float)info->height / info->outHeight;
 
     //列像素遍历
-    for (y = startLine, yStep = startLine * yDiv; y < endLine; y += 1, yStep += yDiv)
+    for (y = startLine, yStep = startLine * yDiv,
+        offset = startLine * info->outWidth * 3; y < endLine; y += 1, yStep += yDiv)
     {
-        //行地址计数
-        offset = y * info->outWidth * 3;
-
         //最近y值
         ySrc = (int)round(yStep);
         if (ySrc == info->height)
             ySrc -= 1;
-    
+
         //避免下面for循环中重复该乘法
         ySrc *= info->width;
 
@@ -212,7 +208,7 @@ unsigned char *zoom(
     int outSize;
     int threadCount;
     int processor;
-    void (*callback)(Zoom_Info*);
+    void (*callback)(Zoom_Info *);
 
     Zoom_Info info = {
         .rgb = rgb,
@@ -242,7 +238,7 @@ unsigned char *zoom(
     if (outSize > 230400)
     {
         //获取cpu可用核心数
-        processor = get_nprocs();// * 2;
+        processor = get_nprocs(); // * 2;
         if (processor == 0)
             processor = 4;
         //每核心处理行数
