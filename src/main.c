@@ -38,7 +38,7 @@ void help(char **argv)
 int main(int argc, char **argv)
 {
     char *tail;
-    long tickUs;
+    long tickUs1, tickUs2, tickUs3, tickUs4;
 
     //输入图像参数
     unsigned char *map;
@@ -59,14 +59,17 @@ int main(int argc, char **argv)
         return 0;
     }
 
+    //用时
+    tickUs1 = getTickUs();
+
     //解文件
     tail = get_tail(argv[1]);
-    if(strstr(tail, ".bmp") || strstr(tail, ".BMP"))
+    if (strstr(tail, ".bmp") || strstr(tail, ".BMP"))
     {
         map = bmp_get(argv[1], &width, &height, &pb);
     }
-    else if(strstr(tail, ".jpg") || strstr(tail, ".JPG") ||
-        strstr(tail, ".jpeg") || strstr(tail, ".JPEG"))
+    else if (strstr(tail, ".jpg") || strstr(tail, ".JPG") ||
+             strstr(tail, ".jpeg") || strstr(tail, ".JPEG"))
     {
         map = jpeg_get(argv[1], &width, &height, &pb);
     }
@@ -85,25 +88,30 @@ int main(int argc, char **argv)
         zt = atoi(argv[3]);
 
     printf("input: %s / %dx%dx%d bytes / zoom %.2f / type %d \r\n",
-        argv[1], width, height, pb, zm, zt);
+           argv[1], width, height, pb, zm, zt);
 
     //用时
-    tickUs = getTickUs();
+    tickUs2 = getTickUs();
 
     //缩放
     outMap = zoom(map, width, height, &outWidth, &outHeight, zm, zt);
 
     //用时
-    tickUs = getTickUs() - tickUs;
+    tickUs3 = getTickUs();
 
     //输出文件
     if (outMap)
     {
-        printf("output: out.jpg %dx%dx%d bytes / time %.3fms\r\n",
-            outWidth, outHeight, pb, (float)tickUs / 1000);
-
         // bmp_create("./out.bmp", outMap, outWidth, outHeight, pb);
-        jpeg_create("./out.jpg", outMap, outWidth, outHeight, pb);
+        jpeg_create("./out.jpg", outMap, outWidth, outHeight, pb, 100);
+
+        //用时
+        tickUs4 = getTickUs();
+
+        printf("output: out.jpg / %dx%dx%d bytes / zoom time %.3fms / total time %.3fms\r\n",
+               outWidth, outHeight, pb,
+               (float)(tickUs3 - tickUs2) / 1000,
+               (float)(tickUs4 - tickUs1) / 1000);
 
         //内存回收
         free(outMap);
