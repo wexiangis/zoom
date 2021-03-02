@@ -1,5 +1,6 @@
 # 交叉编译器选择(没有则注释掉)
 #cross:=arm-linux-gnueabihf
+#cross:=mips-linux-gnu
 
 # 编译器配置
 CC:=gcc
@@ -49,7 +50,7 @@ libs: libjpeg
 libtool:
 	@tar -xzf $(ROOT)/pkg/libtool-2.4.tar.gz -C $(ROOT)/libs && \
 	cd $(ROOT)/libs/libtool-2.4 && \
-	./configure --prefix=$(ROOT)/libs --disable-ltdl-install && \
+	./configure --prefix=$(ROOT)/libs --host=$(HOST) --disable-ltdl-install && \
 	make -j4 && make install && \
 	cd - && \
 	rm $(ROOT)/libs/libtool-2.4 -rf
@@ -59,7 +60,8 @@ libjpeg: libtool
 	@tar -xzf $(ROOT)/pkg/jpeg-6b.tar.gz -C $(ROOT)/libs && \
 	cd $(ROOT)/libs/jpeg-6b && \
 	./configure --prefix=$(ROOT)/libs --host=$(HOST) --enable-shared && \
-	mv $(ROOT)/libs/bin/libtool* ./ && \
+	sed -i 's/CC= gcc/CC= $(CC)/' ./Makefile && \
+	cp $(ROOT)/libs/bin/libtool ./ && \
 	mkdir $(ROOT)/libs/man/man1 -p && \
 	make -j4 && make install && \
 	sed -i '/^#define JPEGLIB_H/a\#include <stddef.h>' ../include/jpeglib.h && \
