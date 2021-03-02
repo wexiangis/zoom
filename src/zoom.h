@@ -25,4 +25,23 @@ unsigned char *zoom(
     float zm,
     Zoom_Type zt);
 
+/*
+ *  数据流处理(为避免大张图片占用巨大内存空间)
+ *  参数:
+ *      obj: 用户私有参数,在调用下面回调函数时传回给用户
+ *      srcRead: 源图片行数据读取回调函数
+ *             : 函数原型 int srcRead(void *obj, unsigned char *rgbLine, int line)
+ *      distWrite: 输出图片行数据回调函数
+ *             : 函数原型 int distWrite(void *obj, unsigned char *rgbLine, int line)
+ *  说明: 关于回调函数的返回,返回成功读写行数,返回0异常或结束
+ */
+void zoom_stream(
+    void *objSrc, void *objDist,
+    int (*srcRead)(void*,unsigned char*,int),
+    int (*distWrite)(void*,unsigned char*,int),
+    int width, int height,
+    int *retWidth, int *retHeight,
+    float zm,
+    Zoom_Type zt);
+
 #endif

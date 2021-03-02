@@ -1,6 +1,6 @@
 # 交叉编译器选择(没有则注释掉)
-#cross:=arm-linux-gnueabihf
-#cross:=mips-linux-gnu
+# cross:=arm-linux-gnueabihf
+# cross:=mips-linux-gnu
 
 # 编译器配置
 CC:=gcc
@@ -46,7 +46,7 @@ cleanall: clean
 libs: libjpeg
 	@echo "---------- complete !! ----------"
 
-# 注意这里libtool是用gcc编译并运行于当前系统
+# 用于辅助生成动态库的工具
 libtool:
 	@tar -xzf $(ROOT)/pkg/libtool-2.4.tar.gz -C $(ROOT)/libs && \
 	cd $(ROOT)/libs/libtool-2.4 && \
@@ -55,7 +55,7 @@ libtool:
 	cd - && \
 	rm $(ROOT)/libs/libtool-2.4 -rf
 
-# 编译libjpeg需要libtool工具
+# 编译libjpeg依赖libtool工具
 libjpeg: libtool
 	@tar -xzf $(ROOT)/pkg/jpeg-6b.tar.gz -C $(ROOT)/libs && \
 	cd $(ROOT)/libs/jpeg-6b && \

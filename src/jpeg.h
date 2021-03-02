@@ -1,10 +1,8 @@
 
-#ifndef _JPEG_H
-#define _JPEG_H
+#ifndef _JPEG_H_
+#define _JPEG_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// -------------------------- 文件数据整读整写模式 --------------------------
 
 /*
  *  bmp 图片数据获取
@@ -31,8 +29,38 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
  */
 int jpeg_create(char *fileOutput, unsigned char *rgb, int width, int height, int pixelBytes, int quality);
 
-#ifdef __cplusplus
-};
-#endif
+// -------------------------- 行数据流处理模式 --------------------------
+
+/*
+ *  行处理模式
+ *  参数: 同上
+ *  返回: 行处理指针,NULL失败
+ */
+void *jpeg_getLine(char *fileInput, int *width, int *height, int *pixelBytes);
+
+/*
+ *  行处理模式
+ *  参数: 同上
+ *  返回: 行处理指针,NULL失败
+ */
+void *jpeg_createLine(char *fileOutput, int width, int height, int pixelBytes, int quality);
+
+/*
+ *  按行rgb数据读、写
+ *  参数:
+ *      jp: 行处理指针
+ *      rgbLine: 一行数据量,长度为 width * height * pixelBytes
+ *      line: 要处理的行数
+ *  返回:
+ *      写图片时返回剩余行数,
+ *      读图片时返回实际读取行数,
+ *      返回0时结束(此时系统自动回收内存)
+ */
+int jpeg_line(void *jp, unsigned char *rgbLine, int line);
+
+/*
+ *  完毕释放指针
+ */
+void jpeg_line_close(void *jp);
 
 #endif

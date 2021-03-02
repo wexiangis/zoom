@@ -6,6 +6,9 @@
 #include "bmp.h"
 #include "zoom.h"
 
+//使用文件流模式
+// #define USE_ZOOM_STREAM
+
 #include <sys/time.h>
 long getTickUs(void)
 {
@@ -39,13 +42,16 @@ int main(int argc, char **argv)
 {
     char *tail;
     long tickUs1, tickUs2, tickUs3, tickUs4;
+#ifdef USE_ZOOM_STREAM
+    void *jpSrc, *jpDist;
+#endif
 
     //输入图像参数
-    unsigned char *map;
+    unsigned char *map = NULL;
     int width = 0, height = 0, pb = 3;
 
     //输出图像参数
-    unsigned char *outMap;
+    unsigned char *outMap = NULL;
     int outWidth, outHeight;
 
     //缩放倍数: 0~1缩小,等于1不变,大于1放大
@@ -71,7 +77,11 @@ int main(int argc, char **argv)
     else if (strstr(tail, ".jpg") || strstr(tail, ".JPG") ||
              strstr(tail, ".jpeg") || strstr(tail, ".JPEG"))
     {
+#ifdef USE_ZOOM_STREAM
+        jpSrc = jpeg_getLine(argv[1], &width, &height, &pb);
+#else
         map = jpeg_get(argv[1], &width, &height, &pb);
+#endif
     }
     else
     {
@@ -89,6 +99,32 @@ int main(int argc, char **argv)
 
     printf("input: %s / %dx%dx%d bytes / zoom %.2f / type %d \r\n",
            argv[1], width, height, pb, zm, zt);
+
+#ifdef USE_ZOOM_STREAM
+
+    //输出流准备
+    jpDist = jpeg_createLine("./out.jpg", (int)(width * zm), (int)(height * zm), pb, 100);
+
+    //用时
+    tickUs2 = getTickUs();
+
+    //缩放
+    zoom_stream(
+        jpSrc, jpDist, &jpeg_line, &jpeg_line,
+        width, height, &outWidth, &outHeight, zm, zt);
+
+    //用时
+    tickUs3 = tickUs4 = getTickUs();
+
+    //内存回收
+    jpeg_line_close(jpSrc);
+    jpeg_line_close(jpDist);
+
+    printf("output: out.jpg / %dx%dx%d bytes / zoom time %.3fms / total time %.3fms\r\n",
+            outWidth, outHeight, pb,
+            (float)(tickUs3 - tickUs2) / 1000,
+            (float)(tickUs4 - tickUs1) / 1000);
+#else
 
     //用时
     tickUs2 = getTickUs();
@@ -112,14 +148,15 @@ int main(int argc, char **argv)
                outWidth, outHeight, pb,
                (float)(tickUs3 - tickUs2) / 1000,
                (float)(tickUs4 - tickUs1) / 1000);
-
-        //内存回收
-        free(outMap);
     }
     else
         printf("Error: zoom failed !!\r\n");
+#endif
 
     //内存回收
-    free(map);
+    if (map)
+        free(map);
+    if (outMap)
+        free(outMap);
     return 0;
 }
