@@ -161,8 +161,10 @@ void _zoom_linear_stream(
     xDiv = (float)info->width / info->outWidth;
     yDiv = (float)info->height / info->outHeight;
 
-    //读取新2行数据
+    //读取新1行数据
     srcRead(objSrc, info->rgb + info->lineSize, 1);
+    //填充满2行
+    memcpy(info->rgb, info->rgb + info->lineSize, info->lineSize);
 
     //列像素遍历
     for (y = 0, yStep = 0 * yDiv; y < info->outHeight; y += 1, yStep += yDiv)
@@ -228,10 +230,6 @@ void _zoom_linear_stream(
         //输出一行数据
         distWrite(objDist, info->outRgb, 1);
     }
-
-    //务必取完数据
-    while(srcRead(objSrc, info->rgb, 1))
-        ;
 }
 
 void _zoom_near(Zoom_Info *info)
@@ -343,10 +341,6 @@ void _zoom_near_stream(
         //输出一行数据
         distWrite(objDist, info->outRgb, 1);
     }
-
-    //务必取完数据
-    while(srcRead(objSrc, info->rgb, 1))
-        ;
 }
 
 /*
@@ -459,11 +453,6 @@ void zoom_stream(
     float zm,
     Zoom_Type zt)
 {
-    void (*callback)(Zoom_Info *,
-        void *objSrc, void *objDist,
-        int (*srcRead)(void*,unsigned char*,int),
-        int (*distWrite)(void*,unsigned char*,int));
-
     Zoom_Info info = {
         .width = width,
         .height = height,
@@ -484,13 +473,11 @@ void zoom_stream(
     //输出流,行缓冲内存准备(只需1行)
     info.outRgb = (unsigned char *)calloc(info.outLineSize, 1);
 
-    //缩放方式
-    if (zt == ZT_LINEAR)
-        callback = &_zoom_linear_stream;
-    else
-        callback = &_zoom_near_stream;
     //开始缩放
-    callback(&info, objSrc, objDist, srcRead, distWrite);
+    if (zt == ZT_LINEAR)
+        _zoom_linear_stream(&info, objSrc, objDist, srcRead, distWrite);
+    else
+        _zoom_near_stream(&info, objSrc, objDist, srcRead, distWrite);    
 
     //返回
     if (retWidth)

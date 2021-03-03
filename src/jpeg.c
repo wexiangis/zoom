@@ -8,6 +8,8 @@ typedef struct
     FILE *fp;
     int rw;       // 读写标志: 0/读 1/写
     int rowCount; // 当前已处理行计数
+    int rowMax;   // rowCount计数目标
+    int rowSize;
     struct jpeg_error_mgr jerr;
     struct jpeg_compress_struct cinfo;   // 压缩信息
     struct jpeg_decompress_struct dinfo; // 解压信息
@@ -35,7 +37,7 @@ int jpeg_create(char *fileOutput, unsigned char *rgb, int width, int height, int
     // 数据流IO准备
     if ((fp = fopen(fileOutput, "wb")) == NULL)
     {
-        printf("can't open %s\n", fileOutput);
+        fprintf(stderr, "jpeg_create: can't open %s\n", fileOutput);
         return -1;
     }
 
@@ -85,7 +87,7 @@ Jpeg_Private *jpeg_createLine(char *fileOutput, int width, int height, int pixel
     // 数据流IO准备
     if ((jp->fp = fopen(fileOutput, "wb")) == NULL)
     {
-        printf("can't open %s\n", fileOutput);
+        fprintf(stderr, "jpeg_createLine: can't open %s\n", fileOutput);
         free(jp);
         return NULL;
     }
@@ -110,8 +112,11 @@ Jpeg_Private *jpeg_createLine(char *fileOutput, int width, int height, int pixel
     // 开始压缩
     jpeg_start_compress(&jp->cinfo, TRUE);
 
+    jp->rowMax = height;
+    jp->rowSize = width * pixelBytes;
+
     // 写标志
-    jp->rw =1;
+    jp->rw = 1;
     return jp;
 }
 
@@ -129,8 +134,7 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
 {
     FILE *fp;
     int offset, rowSize;
-    unsigned char *retBuff;
-    // JSAMPARRAY jsampArray;
+    unsigned char *retRgb;
     JSAMPROW jsampRow[1];
     struct jpeg_error_mgr jerr;
     struct jpeg_decompress_struct dinfo;
@@ -138,7 +142,7 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
     // 数据流IO准备
     if ((fp = fopen(fileInput, "rb")) == NULL)
     {
-        fprintf(stderr, "can't open %s\n", fileInput);
+        fprintf(stderr, "jpeg_get: can't open %s\n", fileInput);
         return NULL;
     }
 
@@ -148,10 +152,25 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
 
     // 传递文件流
     jpeg_stdio_src(&dinfo, fp);
-    // 读取文件头
-    jpeg_read_header(&dinfo, TRUE);
+    // 解析文件头
+    if (jpeg_read_header(&dinfo, FALSE) != JPEG_HEADER_OK)
+    {
+        //失败
+        fprintf(stderr, "jpeg_get: jpeg_read_header failed \r\n");
+        jpeg_destroy_decompress(&dinfo);
+        fclose(fp);
+        return NULL;
+    }
     // 开始解压
-    jpeg_start_decompress(&dinfo);
+    if (jpeg_start_decompress(&dinfo) == FALSE)
+    {
+        //失败
+        fprintf(stderr, "jpeg_get: jpeg_start_decompress failed \r\n");
+        jpeg_finish_decompress(&dinfo);
+        jpeg_destroy_decompress(&dinfo);
+        fclose(fp);
+        return NULL;
+    }
 
     // 得到图片基本参数
     if (width)
@@ -162,19 +181,17 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
         *pixelBytes = dinfo.output_components;
 
     // 计算图片RGB数据大小,并分配内存
-    retBuff = (unsigned char *)calloc(
+    retRgb = (unsigned char *)calloc(
         dinfo.output_width * dinfo.output_height * dinfo.output_components + 1, 1);
 
     // Process data
     offset = 0;
     rowSize = dinfo.output_width * dinfo.output_components;
-    // jsampArray = (*dinfo.mem->alloc_sarray)((j_common_ptr)&dinfo, JPOOL_IMAGE, rowSize, 1);
 
     // 按行读取解压数据
     while (dinfo.output_scanline < dinfo.output_height)
     {
-        // printf("output_scanline = %d\r\n", dinfo.output_scanline);
-        jsampRow[0] = (JSAMPROW)&retBuff[offset];
+        jsampRow[0] = (JSAMPROW)&retRgb[offset];
         jpeg_read_scanlines(&dinfo, jsampRow, 1); //读取一行数据
         offset += rowSize;
     }
@@ -182,7 +199,7 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
     jpeg_finish_decompress(&dinfo);
     jpeg_destroy_decompress(&dinfo);
     fclose(fp);
-    return retBuff;
+    return retRgb;
 }
 
 /*
@@ -197,7 +214,7 @@ Jpeg_Private *jpeg_getLine(char *fileInput, int *width, int *height, int *pixelB
     // 数据流IO准备
     if ((jp->fp = fopen(fileInput, "rb")) == NULL)
     {
-        printf("can't open %s\n", fileInput);
+        fprintf(stderr, "jpeg_getLine: can't open %s\n", fileInput);
         free(jp);
         return NULL;
     }
@@ -208,10 +225,30 @@ Jpeg_Private *jpeg_getLine(char *fileInput, int *width, int *height, int *pixelB
 
     // 传递文件流
     jpeg_stdio_src(&jp->dinfo, jp->fp);
-    // 读取文件头
-    jpeg_read_header(&jp->dinfo, TRUE);
+    // 解析文件头
+    if (jpeg_read_header(&jp->dinfo, TRUE) != JPEG_HEADER_OK)
+    {
+        //失败
+        fprintf(stderr, "jpeg_getLine: jpeg_read_header failed \r\n");
+        jpeg_destroy_decompress(&jp->dinfo);
+        fclose(jp->fp);
+        free(jp);
+        return NULL;
+    }
     // 开始解压
-    jpeg_start_decompress(&jp->dinfo);
+    if (jpeg_start_decompress(&jp->dinfo) == FALSE)
+    {
+        //失败
+        fprintf(stderr, "jpeg_getLine: jpeg_start_decompress failed \r\n");
+        jpeg_finish_decompress(&jp->dinfo);
+        jpeg_destroy_decompress(&jp->dinfo);
+        fclose(jp->fp);
+        free(jp);
+        return NULL;
+    }
+
+    jp->rowMax = jp->dinfo.output_height;
+    jp->rowSize = jp->dinfo.output_width * jp->dinfo.output_components;
 
     if (width)
         *width = jp->dinfo.output_width;
@@ -225,22 +262,19 @@ Jpeg_Private *jpeg_getLine(char *fileInput, int *width, int *height, int *pixelB
 
 int _jpeg_createLine(Jpeg_Private *jp, unsigned char *rgbLine, int line)
 {
-    int ret;
     JSAMPROW jsampRow[line];
     // 行计数
     jp->rowCount += line;
-    if (jp->rowCount > jp->cinfo.image_height)
+    if (jp->rowCount > jp->rowMax)
     {
-        line -= jp->rowCount - jp->cinfo.image_height;
-        jp->rowCount = jp->cinfo.image_height;
+        line -= jp->rowCount - jp->rowMax;
+        jp->rowCount = jp->rowMax;
     }
     // 行数据扫描
     jsampRow[0] = (JSAMPROW)rgbLine;
     jpeg_write_scanlines(&jp->cinfo, jsampRow, line);
-    // 剩余行
-    ret = jp->cinfo.image_height - jp->rowCount;
     // 完毕内存回收
-    if (ret == 0)
+    if (jp->rowCount == jp->rowMax)
     {
         jpeg_finish_compress(&jp->cinfo);
         jpeg_destroy_compress(&jp->cinfo);
@@ -248,7 +282,7 @@ int _jpeg_createLine(Jpeg_Private *jp, unsigned char *rgbLine, int line)
         jp->fp = NULL;
         // printf("end of _jpeg_createLine \r\n");
     }
-    return ret;
+    return line;
 }
 
 int _jpeg_getLine(Jpeg_Private *jp, unsigned char *rgbLine, int line)
@@ -256,16 +290,16 @@ int _jpeg_getLine(Jpeg_Private *jp, unsigned char *rgbLine, int line)
     JSAMPROW jsampRow[1];
     // 行计数
     jp->rowCount += line;
-    if (jp->rowCount > jp->dinfo.image_height)
+    if (jp->rowCount > jp->rowMax)
     {
-        line -= jp->rowCount - jp->dinfo.image_height;
-        jp->rowCount = jp->dinfo.image_height;
+        line -= jp->rowCount - jp->rowMax;
+        jp->rowCount = jp->rowMax;
     }
     // 行数据扫描
     jsampRow[0] = (JSAMPROW)rgbLine;
     jpeg_read_scanlines(&jp->dinfo, jsampRow, 1);
     // 完毕内存回收
-    if (jp->dinfo.image_height == jp->rowCount)
+    if (jp->rowCount == jp->rowMax)
     {
         jpeg_finish_decompress(&jp->dinfo);
         jpeg_destroy_decompress(&jp->dinfo);
@@ -305,22 +339,34 @@ int jpeg_line(Jpeg_Private *jp, unsigned char *rgbLine, int line)
  */
 void jpeg_line_close(Jpeg_Private *jp)
 {
+    unsigned char *rgbLine;
     if (jp)
     {
         //用文件指针判断流是否关闭
         if (jp->fp)
         {
-            if (jp->rw)
+            //必须把行数据填充足够,否则关闭失败
+            if (jp->rowCount != jp->rowMax)
             {
-                jpeg_finish_compress(&jp->cinfo);
-                jpeg_destroy_compress(&jp->cinfo);
+                rgbLine = (unsigned char *)calloc(jp->rowSize, 1);
+                while(jpeg_line(jp, rgbLine, 1) == 1);
+                free(rgbLine);
             }
-            else
+            //主动关闭
+            if (jp->fp)
             {
-                jpeg_finish_decompress(&jp->dinfo);
-                jpeg_destroy_decompress(&jp->dinfo);
+                if (jp->rw)
+                {
+                    jpeg_finish_compress(&jp->cinfo);
+                    jpeg_destroy_compress(&jp->cinfo);
+                }
+                else
+                {
+                    jpeg_finish_decompress(&jp->dinfo);
+                    jpeg_destroy_decompress(&jp->dinfo);
+                }
+                fclose(jp->fp);
             }
-            fclose(jp->fp);
         }
         jp->fp = NULL;
         free(jp);

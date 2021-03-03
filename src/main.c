@@ -7,7 +7,7 @@
 #include "zoom.h"
 
 //使用文件流模式
-// #define USE_ZOOM_STREAM
+#define USE_ZOOM_STREAM
 
 #include <sys/time.h>
 long getTickUs(void)
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
     char *tail;
     long tickUs1, tickUs2, tickUs3, tickUs4;
 #ifdef USE_ZOOM_STREAM
-    void *jpSrc, *jpDist;
+    void *jpSrc = NULL, *jpDist = NULL;
 #endif
 
     //输入图像参数
@@ -52,7 +52,7 @@ int main(int argc, char **argv)
 
     //输出图像参数
     unsigned char *outMap = NULL;
-    int outWidth, outHeight;
+    int outWidth = 0, outHeight = 0;
 
     //缩放倍数: 0~1缩小,等于1不变,大于1放大
     float zm = 1.0;
@@ -100,18 +100,22 @@ int main(int argc, char **argv)
     printf("input: %s / %dx%dx%d bytes / zoom %.2f / type %d \r\n",
            argv[1], width, height, pb, zm, zt);
 
-#ifdef USE_ZOOM_STREAM
+#ifdef USE_ZOOM_STREAM //数据流模式,减小内存占用
 
     //输出流准备
-    jpDist = jpeg_createLine("./out.jpg", (int)(width * zm), (int)(height * zm), pb, 100);
+    if (jpSrc)
+        jpDist = jpeg_createLine("./out.jpg", (int)(width * zm), (int)(height * zm), pb, 100);
 
     //用时
     tickUs2 = getTickUs();
 
     //缩放
-    zoom_stream(
-        jpSrc, jpDist, &jpeg_line, &jpeg_line,
-        width, height, &outWidth, &outHeight, zm, zt);
+    if (jpSrc && jpDist)
+    {
+        zoom_stream(
+            jpSrc, jpDist, &jpeg_line, &jpeg_line,
+            width, height, &outWidth, &outHeight, zm, zt);
+    }
 
     //用时
     tickUs3 = tickUs4 = getTickUs();
@@ -124,13 +128,15 @@ int main(int argc, char **argv)
             outWidth, outHeight, pb,
             (float)(tickUs3 - tickUs2) / 1000,
             (float)(tickUs4 - tickUs1) / 1000);
-#else
+
+#else //整图加载和处理模式,占用内存巨大
 
     //用时
     tickUs2 = getTickUs();
 
     //缩放
-    outMap = zoom(map, width, height, &outWidth, &outHeight, zm, zt);
+    if (map)
+        outMap = zoom(map, width, height, &outWidth, &outHeight, zm, zt);
 
     //用时
     tickUs3 = getTickUs();
