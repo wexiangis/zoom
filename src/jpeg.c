@@ -107,7 +107,7 @@ Jpeg_Private *jpeg_createLine(char *fileOutput, int width, int height, int pixel
     jpeg_set_defaults(&jp->cinfo);
 
     // 设置压缩质量0~100,越大、文件越大、处理越久
-    jpeg_set_quality(&jp->cinfo, 100, TRUE);
+    jpeg_set_quality(&jp->cinfo, quality, TRUE);
 
     // 开始压缩
     jpeg_start_compress(&jp->cinfo, TRUE);

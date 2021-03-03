@@ -76,6 +76,7 @@ void _zoom_linear(Zoom_Info *info)
 
     //多线程
     int startLine, endLine;
+
     //多线程,获得自己处理行信息
     startLine = info->divLine * (info->threadCount++);
     endLine = startLine + info->divLine;
@@ -306,8 +307,6 @@ void _zoom_near_stream(
     {
         //最近y值
         ySrc = (int)round(yStep);
-        if (ySrc == info->height)
-            ySrc -= 1;
 
         //读取足够的行数据(移动info->rgb中的行数据到能覆盖ySrc所在行)
         while (readLine < ySrc)
@@ -320,9 +319,6 @@ void _zoom_near_stream(
         }
 
         // printf("ySrc %d - readLine %d \r\n", ySrc, readLine);
-
-        //避免下面for循环中重复该乘法
-        ySrc *= info->width;
 
         //行像素遍历
         for (x = 0, xStep = 0, offset = 0; x < info->outWidth; x += 1, xStep += xDiv)
