@@ -349,7 +349,8 @@ void jpeg_line_close(Jpeg_Private *jp)
             if (jp->rowCount != jp->rowMax)
             {
                 rgbLine = (unsigned char *)calloc(jp->rowSize, 1);
-                while(jpeg_line(jp, rgbLine, 1) == 1);
+                while (jpeg_line(jp, rgbLine, 1) == 1)
+                    ;
                 free(rgbLine);
             }
             //主动关闭

@@ -89,7 +89,8 @@ void _zoom_linear(Zoom_Info *info)
 
     //列像素遍历
     for (y = startLine, yStep = startLine * yDiv,
-        offset = startLine * info->outLineSize; y < endLine; y += 1, yStep += yDiv)
+        offset = startLine * info->outLineSize;
+         y < endLine; y += 1, yStep += yDiv)
     {
         //上下2个相邻点: 距离计算
         floorY = floor(yStep);
@@ -143,8 +144,8 @@ void _zoom_linear(Zoom_Info *info)
 void _zoom_linear_stream(
     Zoom_Info *info,
     void *objSrc, void *objDist,
-    int (*srcRead)(void*,unsigned char*,int),
-    int (*distWrite)(void*,unsigned char*,int))
+    int (*srcRead)(void *, unsigned char *, int),
+    int (*distWrite)(void *, unsigned char *, int))
 {
     float floorX, floorY, ceilX, ceilY;
     float errUp, errDown, errLeft, errRight;
@@ -253,12 +254,18 @@ void _zoom_near(Zoom_Info *info)
 
     //列像素遍历
     for (y = startLine, yStep = startLine * yDiv,
-        offset = startLine * info->outLineSize; y < endLine; y += 1, yStep += yDiv)
+        offset = startLine * info->outLineSize;
+         y < endLine; y += 1, yStep += yDiv)
     {
         //最近y值
+#if 0
         ySrc = (int)round(yStep);
         if (ySrc == info->height)
             ySrc -= 1;
+#else
+        //直接类型转换可以提升速度,效果相当于floor
+        ySrc = (int)(yStep);
+#endif
 
         //避免下面for循环中重复该乘法
         ySrc *= info->width;
@@ -267,9 +274,14 @@ void _zoom_near(Zoom_Info *info)
         for (x = 0, xStep = 0; x < info->outWidth; x += 1, xStep += xDiv)
         {
             //最近x值
+#if 0
             xSrc = (int)round(xStep);
             if (xSrc == info->width)
                 xSrc -= 1;
+#else
+            //直接类型转换可以提升速度,效果相当于floor
+            xSrc = (int)(xStep);
+#endif
             //拷贝最近点
             offsetSrc = (ySrc + xSrc) * 3;
             info->outRgb[offset++] = info->rgb[offsetSrc++];
@@ -285,8 +297,8 @@ void _zoom_near(Zoom_Info *info)
 void _zoom_near_stream(
     Zoom_Info *info,
     void *objSrc, void *objDist,
-    int (*srcRead)(void*,unsigned char*,int),
-    int (*distWrite)(void*,unsigned char*,int))
+    int (*srcRead)(void *, unsigned char *, int),
+    int (*distWrite)(void *, unsigned char *, int))
 {
     int xSrc, ySrc;
     float xStep, yStep, xDiv, yDiv;
@@ -306,7 +318,12 @@ void _zoom_near_stream(
     for (y = 0, yStep = 0 * yDiv; y < info->outHeight; y += 1, yStep += yDiv)
     {
         //最近y值
+#if 0
         ySrc = (int)round(yStep);
+#else
+        //直接类型转换可以提升速度,效果相当于floor
+        ySrc = (int)(yStep);
+#endif
 
         //读取足够的行数据(移动info->rgb中的行数据到能覆盖ySrc所在行)
         while (readLine < ySrc)
@@ -324,9 +341,14 @@ void _zoom_near_stream(
         for (x = 0, xStep = 0, offset = 0; x < info->outWidth; x += 1, xStep += xDiv)
         {
             //最近x值
+#if 0
             xSrc = (int)round(xStep);
             if (xSrc == info->width)
                 xSrc -= 1;
+#else
+            //直接类型转换可以提升速度,效果相当于floor
+            xSrc = (int)(xStep);
+#endif
             //拷贝最近点
             offsetSrc = xSrc * 3;
             info->outRgb[offset++] = info->rgb[offsetSrc++];
@@ -378,8 +400,8 @@ unsigned char *zoom(
         return NULL;
 
     //行数据量
-    info.lineSize = info.width * 3,
-    info.outLineSize = info.outWidth * 3,
+    info.lineSize = info.width * 3;
+    info.outLineSize = info.outWidth * 3;
 
     //输出图像内存准备
     outSize = info.outWidth * info.outHeight * 3;
@@ -442,8 +464,8 @@ unsigned char *zoom(
  */
 void zoom_stream(
     void *objSrc, void *objDist,
-    int (*srcRead)(void*,unsigned char*,int),
-    int (*distWrite)(void*,unsigned char*,int),
+    int (*srcRead)(void *, unsigned char *, int),
+    int (*distWrite)(void *, unsigned char *, int),
     int width, int height,
     int *retWidth, int *retHeight,
     float zm,
@@ -461,8 +483,8 @@ void zoom_stream(
         return;
 
     //行数据量
-    info.lineSize = info.width * 3,
-    info.outLineSize = info.outWidth * 3,
+    info.lineSize = info.width * 3;
+    info.outLineSize = info.outWidth * 3;
 
     //输入流,行缓冲内存准备(至少2行)
     info.rgb = (unsigned char *)calloc(info.lineSize * 2, 1);
@@ -473,7 +495,7 @@ void zoom_stream(
     if (zt == ZT_LINEAR)
         _zoom_linear_stream(&info, objSrc, objDist, srcRead, distWrite);
     else
-        _zoom_near_stream(&info, objSrc, objDist, srcRead, distWrite);    
+        _zoom_near_stream(&info, objSrc, objDist, srcRead, distWrite);
 
     //返回
     if (retWidth)

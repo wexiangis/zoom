@@ -11,8 +11,7 @@
  *      width: 返回图片宽(像素), 不接收置NULL
  *      height: 返回图片高(像素), 不接收置NULL
  *      pixelBytes: 返回图片每像素的字节数, 不接收置NULL
- * 
- *  返回: 图片数据指针, 已分配内存, 用完记得释放
+ *  返回: 图片数据指针, 已分配内存 !! 用完记得free()释放 !!
  */
 unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelBytes);
 
@@ -49,10 +48,10 @@ void *jpeg_createLine(char *fileOutput, int width, int height, int pixelBytes, i
  *  按行rgb数据读、写
  *  参数:
  *      jp: 行处理指针
- *      rgbLine: 一行数据量,长度为 width * height * pixelBytes
+ *      rgbLine: 行rgb数据,一行长度为width*height*pixelBytes,多行时继续加
  *      line: 要处理的行数
  *  返回:
- *      写图片时返回剩余行数,
+ *      写图片时返回成功写入行,
  *      读图片时返回实际读取行数,
  *      返回0时结束(此时系统自动回收内存)
  */

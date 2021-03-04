@@ -37,8 +37,8 @@ unsigned char *zoom(
  */
 void zoom_stream(
     void *objSrc, void *objDist,
-    int (*srcRead)(void*,unsigned char*,int),
-    int (*distWrite)(void*,unsigned char*,int),
+    int (*srcRead)(void *, unsigned char *, int),
+    int (*distWrite)(void *, unsigned char *, int),
     int width, int height,
     int *retWidth, int *retHeight,
     float zm,

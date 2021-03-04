@@ -6,7 +6,7 @@
 #include "bmp.h"
 #include "zoom.h"
 
-//使用文件流模式
+//使用文件流模式(避免整图加载内存占用)
 #define USE_ZOOM_STREAM
 
 #include <sys/time.h>
@@ -125,9 +125,9 @@ int main(int argc, char **argv)
     jpeg_line_close(jpDist);
 
     printf("output: out.jpg / %dx%dx%d bytes / zoom time %.3fms / total time %.3fms\r\n",
-            outWidth, outHeight, pb,
-            (float)(tickUs3 - tickUs2) / 1000,
-            (float)(tickUs4 - tickUs1) / 1000);
+           outWidth, outHeight, pb,
+           (float)(tickUs3 - tickUs2) / 1000,
+           (float)(tickUs4 - tickUs1) / 1000);
 
 #else //整图加载和处理模式,占用内存巨大
 
@@ -164,5 +164,6 @@ int main(int argc, char **argv)
         free(map);
     if (outMap)
         free(outMap);
+
     return 0;
 }
