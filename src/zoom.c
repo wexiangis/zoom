@@ -8,16 +8,32 @@
 
 #include "zoom.h"
 
+// 原版计算方式
+#define LINEAR1(p11, p12, p21, p22, le, re, ue, de) \
+(unsigned char)((p11 * re + p12 * le) * de + (p21 * re + p22 * le) * ue)
+
+// 简化版,用re替换le后
+#define LINEAR2(p11, p12, p21, p22, re, ue, de) \
+(unsigned char)((p12 + re * (p11 - p12)) * de + (p22 + re * (p21 - p22)) * ue)
+
+// 选择一种计算方式
+// #define LINEAR(p11, p12, p21, p22, le, re, ue, de) LINEAR1(p11, p12, p21, p22, le, re, ue, de)
+#define LINEAR(p11, p12, p21, p22, le, re, ue, de) LINEAR2(p11, p12, p21, p22, re, ue, de)
+
 typedef struct
 {
-    unsigned char *rgb;
+    unsigned char r, g, b;
+} Zoom_Rgb;
+
+typedef struct
+{
+    //输入输出图像信息
+    Zoom_Rgb *rgb;
     int width, height;
-    int lineSize;
-    unsigned char *outRgb;
-    int outWidth, outHeight;
-    int outLineSize;
+    Zoom_Rgb *rgbOut;
+    int widthOut, heightOut;
     //多线程
-    int divLine;
+    int lineDiv;
     int threadCount;
     int threadFinsh;
 } Zoom_Info;
@@ -39,57 +55,30 @@ static void new_thread(void *obj, void *callback)
     pthread_attr_destroy(&attr);
 }
 
-/*
- *  对左右和上下4个相邻点作线性插值
- *  参数:
- *      p11, p12, p21, p22: 左上、右上、左下、右下四个点
- *      errUp, errDown, errLeft, errRight: 上、下、左、右距离
- *      ret: 编辑计算得到的点
- */
-void _aver_of_4_point(
-    unsigned char *p11,
-    unsigned char *p12,
-    unsigned char *p21,
-    unsigned char *p22,
-    float errUp,
-    float errDown,
-    float errLeft,
-    float errRight,
-    unsigned char *ret)
-{
-    int i;
-    //rgb逐个处理
-    for (i = 0; i < 3; i++)
-    {
-        ret[i] = (unsigned char)((errRight * p11[i] + errLeft * p12[i]) * errDown +
-                                 (errRight * p21[i] + errLeft * p22[i]) * errUp);
-    }
-}
-
 void _zoom_linear(Zoom_Info *info)
 {
     float floorX, floorY, ceilX, ceilY;
     float errUp, errDown, errLeft, errRight;
     int x1, x2, y1, y2;
     float xStep, yStep, xDiv, yDiv;
-    int x, y, offset;
+    int x, y;
+    int offsetOut, offset11, offset12, offset21, offset22;
 
     //多线程
     int startLine, endLine;
-
     //多线程,获得自己处理行信息
-    startLine = info->divLine * (info->threadCount++);
-    endLine = startLine + info->divLine;
-    if (endLine > info->outHeight)
-        endLine = info->outHeight;
+    startLine = info->lineDiv * (info->threadCount++);
+    endLine = startLine + info->lineDiv;
+    if (endLine > info->heightOut)
+        endLine = info->heightOut;
 
     //步宽计算(注意谁除以谁,这里表示的是在输出图像上每跳动一行、列等价于源图像跳过的行、列量)
-    xDiv = (float)info->width / info->outWidth;
-    yDiv = (float)info->height / info->outHeight;
+    xDiv = (float)info->width / info->widthOut;
+    yDiv = (float)info->height / info->heightOut;
 
     //列像素遍历
     for (y = startLine, yStep = startLine * yDiv,
-        offset = startLine * info->outLineSize;
+        offsetOut = startLine * info->widthOut;
          y < endLine; y += 1, yStep += yDiv)
     {
         //上下2个相邻点: 距离计算
@@ -109,7 +98,7 @@ void _zoom_linear(Zoom_Info *info)
         y2 *= info->width;
 
         //行像素遍历
-        for (x = 0, xStep = 0; x < info->outWidth; x += 1, xStep += xDiv, offset += 3)
+        for (x = 0, xStep = 0; x < info->widthOut; x += 1, xStep += xDiv, offsetOut += 1)
         {
             //左右2个相邻点: 距离计算
             floorX = floor(xStep);
@@ -124,16 +113,22 @@ void _zoom_linear(Zoom_Info *info)
                 x2 -= 1;
 
             //双线性插值
-            _aver_of_4_point(
-                &info->rgb[(y1 + x1) * 3],
-                &info->rgb[(y1 + x2) * 3],
-                &info->rgb[(y2 + x1) * 3],
-                &info->rgb[(y2 + x2) * 3],
-                errUp,
-                errDown,
-                errLeft,
-                errRight,
-                &info->outRgb[offset]);
+            offset11 = x1 + y1;
+            offset12 = x2 + y1;
+            offset21 = x1 + y2;
+            offset22 = x2 + y2;
+            info->rgbOut[offsetOut].r = LINEAR(
+                info->rgb[offset11].r, info->rgb[offset12].r,
+                info->rgb[offset21].r, info->rgb[offset22].r,
+                errLeft, errRight, errUp, errDown);
+            info->rgbOut[offsetOut].g = LINEAR(
+                info->rgb[offset11].g, info->rgb[offset12].g,
+                info->rgb[offset21].g, info->rgb[offset22].g,
+                errLeft, errRight, errUp, errDown);
+            info->rgbOut[offsetOut].b = LINEAR(
+                info->rgb[offset11].b, info->rgb[offset12].b,
+                info->rgb[offset21].b, info->rgb[offset22].b,
+                errLeft, errRight, errUp, errDown);
         }
     }
 
@@ -149,27 +144,28 @@ void _zoom_linear_stream(
 {
     float floorX, floorY, ceilX, ceilY;
     float errUp, errDown, errLeft, errRight;
-    int x1, x2, y1, y2;
+    int x1, x2, y2;
     float xStep, yStep, xDiv, yDiv;
-    int x, y, offset;
+    int x, y;
 
     //当前读取行数
     int readLine = 0;
     //两行数据的指针,对应y1,y2来使用
-    unsigned char *line1 = &info->rgb[0];
-    unsigned char *line2 = &info->rgb[info->lineSize];
+    Zoom_Rgb *line1 = &info->rgb[0];
+    Zoom_Rgb *line2 = &info->rgb[info->width];
+    Zoom_Rgb *lineX;
 
     //步宽计算(注意谁除以谁,这里表示的是在输出图像上每跳动一行、列等价于源图像跳过的行、列量)
-    xDiv = (float)info->width / info->outWidth;
-    yDiv = (float)info->height / info->outHeight;
+    xDiv = (float)info->width / info->widthOut;
+    yDiv = (float)info->height / info->heightOut;
 
     //读取新1行数据
-    srcRead(objSrc, info->rgb + info->lineSize, 1);
+    srcRead(objSrc, (unsigned char *)line2, 1);
     //填充满2行
-    memcpy(info->rgb, info->rgb + info->lineSize, info->lineSize);
+    memcpy(line1, line2, info->width * 3);
 
     //列像素遍历
-    for (y = 0, yStep = 0 * yDiv; y < info->outHeight; y += 1, yStep += yDiv)
+    for (y = 0, yStep = 0 * yDiv; y < info->heightOut; y += 1, yStep += yDiv)
     {
         //上下2个相邻点: 距离计算
         floorY = floor(yStep);
@@ -178,7 +174,7 @@ void _zoom_linear_stream(
         errDown = 1 - errUp;
 
         //上下2个相邻点: 序号
-        y1 = (int)floorY;
+        // y1 = (int)floorY;
         y2 = (int)ceilY;
         if (y2 == info->height)
             y2 -= 1;
@@ -187,9 +183,11 @@ void _zoom_linear_stream(
         while (readLine < y2)
         {
             //后面数据往前挪
-            memcpy(info->rgb, info->rgb + info->lineSize, info->lineSize);
+            lineX = line1;
+            line1 = line2;
+            line2 = lineX;
             //读取新一行数据
-            if (srcRead(objSrc, info->rgb + info->lineSize, 1) == 1)
+            if (srcRead(objSrc, (unsigned char *)line2, 1) == 1)
                 readLine += 1;
             else
                 break;
@@ -197,12 +195,8 @@ void _zoom_linear_stream(
 
         // printf("y1 %d y2 %d - readLine %d \r\n", y1, y2, readLine);
 
-        //避免下面for循环中重复该乘法
-        y1 *= info->width;
-        y2 *= info->width;
-
         //行像素遍历
-        for (x = 0, xStep = 0, offset = 0; x < info->outWidth; x += 1, xStep += xDiv, offset += 3)
+        for (x = 0, xStep = 0; x < info->widthOut; x += 1, xStep += xDiv)
         {
             //左右2个相邻点: 距离计算
             floorX = floor(xStep);
@@ -217,20 +211,22 @@ void _zoom_linear_stream(
                 x2 -= 1;
 
             //双线性插值
-            _aver_of_4_point(
-                &line1[x1 * 3],
-                &line1[x2 * 3],
-                &line2[x1 * 3],
-                &line2[x2 * 3],
-                errUp,
-                errDown,
-                errLeft,
-                errRight,
-                &info->outRgb[offset]);
+            info->rgbOut[x].r = LINEAR(
+                    line1[x1].r, line1[x2].r,
+                    line2[x1].r, line2[x2].r,
+                    errLeft, errRight, errUp, errDown);
+            info->rgbOut[x].g = LINEAR(
+                    line1[x1].g, line1[x2].g,
+                    line2[x1].g, line2[x2].g,
+                    errLeft, errRight, errUp, errDown);
+            info->rgbOut[x].b = LINEAR(
+                    line1[x1].b, line1[x2].b,
+                    line2[x1].b, line2[x2].b,
+                    errLeft, errRight, errUp, errDown);
         }
 
         //输出一行数据
-        distWrite(objDist, info->outRgb, 1);
+        distWrite(objDist, (unsigned char *)info->rgbOut, 1);
     }
 }
 
@@ -238,23 +234,23 @@ void _zoom_near(Zoom_Info *info)
 {
     int xSrc, ySrc;
     float xStep, yStep, xDiv, yDiv;
-    int x, y, offset, offsetSrc;
+    int x, y, offset;
 
     //多线程
     int startLine, endLine;
     //多线程,获得自己处理行信息
-    startLine = info->divLine * (info->threadCount++);
-    endLine = startLine + info->divLine;
-    if (endLine > info->outHeight)
-        endLine = info->outHeight;
+    startLine = info->lineDiv * (info->threadCount++);
+    endLine = startLine + info->lineDiv;
+    if (endLine > info->heightOut)
+        endLine = info->heightOut;
 
     //步宽计算(注意谁除以谁,这里表示的是在输出图像上每跳动一行、列等价于源图像跳过的行、列量)
-    xDiv = (float)info->width / info->outWidth;
-    yDiv = (float)info->height / info->outHeight;
+    xDiv = (float)info->width / info->widthOut;
+    yDiv = (float)info->height / info->heightOut;
 
     //列像素遍历
     for (y = startLine, yStep = startLine * yDiv,
-        offset = startLine * info->outLineSize;
+        offset = startLine * info->widthOut;
          y < endLine; y += 1, yStep += yDiv)
     {
         //最近y值
@@ -271,7 +267,7 @@ void _zoom_near(Zoom_Info *info)
         ySrc *= info->width;
 
         //行像素遍历
-        for (x = 0, xStep = 0; x < info->outWidth; x += 1, xStep += xDiv)
+        for (x = 0, xStep = 0; x < info->widthOut; x += 1, xStep += xDiv)
         {
             //最近x值
 #if 0
@@ -283,10 +279,7 @@ void _zoom_near(Zoom_Info *info)
             xSrc = (int)(xStep);
 #endif
             //拷贝最近点
-            offsetSrc = (ySrc + xSrc) * 3;
-            info->outRgb[offset++] = info->rgb[offsetSrc++];
-            info->outRgb[offset++] = info->rgb[offsetSrc++];
-            info->outRgb[offset++] = info->rgb[offsetSrc++];
+            info->rgbOut[offset++] = info->rgb[ySrc + xSrc];
         }
     }
 
@@ -302,20 +295,20 @@ void _zoom_near_stream(
 {
     int xSrc, ySrc;
     float xStep, yStep, xDiv, yDiv;
-    int x, y, offset, offsetSrc;
+    int x, y;
 
     //当前已读取行数
     int readLine = 0;
 
     //步宽计算(注意谁除以谁,这里表示的是在输出图像上每跳动一行、列等价于源图像跳过的行、列量)
-    xDiv = (float)info->width / info->outWidth;
-    yDiv = (float)info->height / info->outHeight;
+    xDiv = (float)info->width / info->widthOut;
+    yDiv = (float)info->height / info->heightOut;
 
     //读取新一行数据
-    srcRead(objSrc, info->rgb, 1);
+    srcRead(objSrc, (unsigned char *)info->rgb, 1);
 
     //列像素遍历
-    for (y = 0, yStep = 0 * yDiv; y < info->outHeight; y += 1, yStep += yDiv)
+    for (y = 0, yStep = 0 * yDiv; y < info->heightOut; y += 1, yStep += yDiv)
     {
         //最近y值
 #if 0
@@ -329,7 +322,7 @@ void _zoom_near_stream(
         while (readLine < ySrc)
         {
             //读取新一行数据
-            if (srcRead(objSrc, info->rgb, 1) == 1)
+            if (srcRead(objSrc, (unsigned char *)info->rgb, 1) == 1)
                 readLine += 1;
             else
                 break;
@@ -338,7 +331,7 @@ void _zoom_near_stream(
         // printf("ySrc %d - readLine %d \r\n", ySrc, readLine);
 
         //行像素遍历
-        for (x = 0, xStep = 0, offset = 0; x < info->outWidth; x += 1, xStep += xDiv)
+        for (x = 0, xStep = 0; x < info->widthOut; x += 1, xStep += xDiv)
         {
             //最近x值
 #if 0
@@ -350,14 +343,11 @@ void _zoom_near_stream(
             xSrc = (int)(xStep);
 #endif
             //拷贝最近点
-            offsetSrc = xSrc * 3;
-            info->outRgb[offset++] = info->rgb[offsetSrc++];
-            info->outRgb[offset++] = info->rgb[offsetSrc++];
-            info->outRgb[offset++] = info->rgb[offsetSrc++];
+            info->rgbOut[x] = info->rgb[xSrc];
         }
 
         //输出一行数据
-        distWrite(objDist, info->outRgb, 1);
+        distWrite(objDist, (unsigned char *)info->rgbOut, 1);
     }
 }
 
@@ -386,11 +376,11 @@ unsigned char *zoom(
     void (*callback)(Zoom_Info *);
 
     Zoom_Info info = {
-        .rgb = rgb,
+        .rgb = (Zoom_Rgb *)rgb,
         .width = width,
         .height = height,
-        .outWidth = (int)(width * zm),
-        .outHeight = (int)(height * zm),
+        .widthOut = (int)(width * zm),
+        .heightOut = (int)(height * zm),
         .threadCount = 0,
         .threadFinsh = 0,
     };
@@ -399,13 +389,9 @@ unsigned char *zoom(
     if (zm <= 0 || width < 1 || height < 1)
         return NULL;
 
-    //行数据量
-    info.lineSize = info.width * 3;
-    info.outLineSize = info.outWidth * 3;
-
     //输出图像内存准备
-    outSize = info.outWidth * info.outHeight * 3;
-    info.outRgb = (unsigned char *)calloc(outSize, 1);
+    outSize = info.widthOut * info.heightOut;
+    info.rgbOut = (Zoom_Rgb *)calloc(outSize, sizeof(Zoom_Rgb));
 
     //缩放方式
     if (zt == ZT_LINEAR)
@@ -413,8 +399,8 @@ unsigned char *zoom(
     else
         callback = &_zoom_near;
 
-    //多线程处理(输出图像大于320x240x3时)
-    if (outSize > 230400)
+    //多线程处理(输出图像大于320x240时)
+    if (outSize > 76800)
     {
         //获取cpu可用核心数
         processor = get_nprocs();
@@ -423,18 +409,18 @@ unsigned char *zoom(
     //普通处理
     if (processor < 2)
     {
-        info.divLine = info.outHeight;
+        info.lineDiv = info.heightOut;
         callback(&info);
     }
     //多线程处理
     else
     {
         //每核心处理行数
-        info.divLine = info.outHeight / processor;
-        if (info.divLine < 1)
-            info.divLine = 1;
+        info.lineDiv = info.heightOut / processor;
+        if (info.lineDiv < 1)
+            info.lineDiv = 1;
         //多线程
-        for (i = threadCount = 0; i < info.outHeight; i += info.divLine)
+        for (i = threadCount = 0; i < info.heightOut; i += info.lineDiv)
         {
             new_thread(&info, callback);
             threadCount += 1;
@@ -446,10 +432,10 @@ unsigned char *zoom(
 
     //返回
     if (retWidth)
-        *retWidth = info.outWidth;
+        *retWidth = info.widthOut;
     if (retHeight)
-        *retHeight = info.outHeight;
-    return info.outRgb;
+        *retHeight = info.heightOut;
+    return (unsigned char *)info.rgbOut;
 }
 
 /*
@@ -474,22 +460,18 @@ void zoom_stream(
     Zoom_Info info = {
         .width = width,
         .height = height,
-        .outWidth = (int)(width * zm),
-        .outHeight = (int)(height * zm),
+        .widthOut = (int)(width * zm),
+        .heightOut = (int)(height * zm),
     };
 
     //参数检查
     if (zm <= 0 || width < 1 || height < 1)
         return;
 
-    //行数据量
-    info.lineSize = info.width * 3;
-    info.outLineSize = info.outWidth * 3;
-
     //输入流,行缓冲内存准备(至少2行)
-    info.rgb = (unsigned char *)calloc(info.lineSize * 2, 1);
+    info.rgb = (Zoom_Rgb *)calloc(info.width * 2, sizeof(Zoom_Rgb));
     //输出流,行缓冲内存准备(只需1行)
-    info.outRgb = (unsigned char *)calloc(info.outLineSize, 1);
+    info.rgbOut = (Zoom_Rgb *)calloc(info.widthOut, sizeof(Zoom_Rgb));
 
     //开始缩放
     if (zt == ZT_LINEAR)
@@ -499,11 +481,11 @@ void zoom_stream(
 
     //返回
     if (retWidth)
-        *retWidth = info.outWidth;
+        *retWidth = info.widthOut;
     if (retHeight)
-        *retHeight = info.outHeight;
+        *retHeight = info.heightOut;
 
     //内内回收
     free(info.rgb);
-    free(info.outRgb);
+    free(info.rgbOut);
 }

@@ -1,7 +1,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+
 #include "jpeglib.h"
+
+typedef struct
+{
+    unsigned char r, g, b;
+} Jpeg_Rgb;
 
 typedef struct
 {
@@ -18,7 +24,7 @@ typedef struct
 /*
  *  生成 bmp 图片
  *  参数:
- *      fileOutput: 路径
+ *      outFile: 路径
  *      rgb: 原始数据
  *      width: 宽(像素)
  *      height: 高(像素)
@@ -26,7 +32,7 @@ typedef struct
  *      quality: 压缩质量,1~100,越大越好,文件越大
  *  返回: 0成功 -1失败
  */
-int jpeg_create(char *fileOutput, unsigned char *rgb, int width, int height, int pixelBytes, int quality)
+int jpeg_create(char *outFile, unsigned char *rgb, int width, int height, int pixelBytes, int quality)
 {
     FILE *fp;
     int rowSize;
@@ -35,9 +41,9 @@ int jpeg_create(char *fileOutput, unsigned char *rgb, int width, int height, int
     struct jpeg_compress_struct cinfo;
 
     // 数据流IO准备
-    if ((fp = fopen(fileOutput, "wb")) == NULL)
+    if ((fp = fopen(outFile, "wb")) == NULL)
     {
-        fprintf(stderr, "jpeg_create: can't open %s\n", fileOutput);
+        fprintf(stderr, "jpeg_create: can't open %s\n", outFile);
         return -1;
     }
 
@@ -80,14 +86,14 @@ int jpeg_create(char *fileOutput, unsigned char *rgb, int width, int height, int
  *  参数: 同上
  *  返回: 行处理指针,NULL失败
  */
-Jpeg_Private *jpeg_createLine(char *fileOutput, int width, int height, int pixelBytes, int quality)
+Jpeg_Private *jpeg_createLine(char *outFile, int width, int height, int pixelBytes, int quality)
 {
     Jpeg_Private *jp = (Jpeg_Private *)calloc(1, sizeof(Jpeg_Private));
 
     // 数据流IO准备
-    if ((jp->fp = fopen(fileOutput, "wb")) == NULL)
+    if ((jp->fp = fopen(outFile, "wb")) == NULL)
     {
-        fprintf(stderr, "jpeg_createLine: can't open %s\n", fileOutput);
+        fprintf(stderr, "jpeg_createLine: can't open %s\n", outFile);
         free(jp);
         return NULL;
     }
@@ -123,14 +129,14 @@ Jpeg_Private *jpeg_createLine(char *fileOutput, int width, int height, int pixel
 /*
  *  bmp 图片数据获取
  *  参数:
- *      fileInput: 路径
+ *      inFile: 路径
  *      width: 返回图片宽(像素), 不接收置NULL
  *      height: 返回图片高(像素), 不接收置NULL
  *      pixelBytes: 返回图片每像素的字节数, 不接收置NULL
  * 
  *  返回: 图片数据指针, 已分配内存, 用完记得释放
  */
-unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelBytes)
+unsigned char *jpeg_get(char *inFile, int *width, int *height, int *pixelBytes)
 {
     FILE *fp;
     int offset, rowSize;
@@ -140,9 +146,9 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
     struct jpeg_decompress_struct dinfo;
 
     // 数据流IO准备
-    if ((fp = fopen(fileInput, "rb")) == NULL)
+    if ((fp = fopen(inFile, "rb")) == NULL)
     {
-        fprintf(stderr, "jpeg_get: can't open %s\n", fileInput);
+        fprintf(stderr, "jpeg_get: can't open %s\n", inFile);
         return NULL;
     }
 
@@ -207,14 +213,14 @@ unsigned char *jpeg_get(char *fileInput, int *width, int *height, int *pixelByte
  *  参数: 同上
  *  返回: 行处理指针,NULL失败
  */
-Jpeg_Private *jpeg_getLine(char *fileInput, int *width, int *height, int *pixelBytes)
+Jpeg_Private *jpeg_getLine(char *inFile, int *width, int *height, int *pixelBytes)
 {
     Jpeg_Private *jp = (Jpeg_Private *)calloc(1, sizeof(Jpeg_Private));
 
     // 数据流IO准备
-    if ((jp->fp = fopen(fileInput, "rb")) == NULL)
+    if ((jp->fp = fopen(inFile, "rb")) == NULL)
     {
-        fprintf(stderr, "jpeg_getLine: can't open %s\n", fileInput);
+        fprintf(stderr, "jpeg_getLine: can't open %s\n", inFile);
         free(jp);
         return NULL;
     }
@@ -337,7 +343,7 @@ int jpeg_line(Jpeg_Private *jp, unsigned char *rgbLine, int line)
 /*
  *  完毕释放指针
  */
-void jpeg_line_close(Jpeg_Private *jp)
+void jpeg_closeLine(Jpeg_Private *jp)
 {
     unsigned char *rgbLine;
     if (jp)
@@ -372,4 +378,139 @@ void jpeg_line_close(Jpeg_Private *jp)
         jp->fp = NULL;
         free(jp);
     }
+}
+
+/*
+ *  文件缩放
+ *  参数:
+ *      inFile, outFile: 输入输出文件,类型.jpg.jpeg.JPG.JPEG
+ *      zoom: 缩放倍数,0.1到1为缩放,1.0以上放大
+ *      quality: 输出图片质量,1~100,越大越好,文件越大
+ */
+void jpeg_zoom(char *inFile, char *outFile, float zoom, int quality)
+{
+    Jpeg_Private jpIn;
+    Jpeg_Private jpOut;
+
+    //输入图片一次加载完
+    Jpeg_Rgb *rgbIn;
+    //输入图片每次写入一行
+    Jpeg_Rgb *rgbOutLine;
+    //公用指针
+    Jpeg_Rgb *pRgb;
+
+    // 缩放分度格div及其增量计数
+    float xStep, yStep, xDiv, yDiv;
+    // 根据 xStep yStep 近似后定位到源图的位置
+    int ySrc;
+    // 二维for循环计数
+    int x, y;
+
+    JSAMPROW jsampRow[1];
+
+    // 参数检查
+    if (!inFile || !outFile || zoom < 0.1 || quality < 1 || quality > 100)
+    {
+        fprintf(stderr, "jpeg_zoom: param error !!\n");
+        return;
+    }
+
+    // 数据流IO准备
+    if ((jpIn.fp = fopen(inFile, "rb")) == NULL)
+    {
+        fprintf(stderr, "jpeg_zoom: can't open %s\n", inFile);
+        return;
+    }
+    if ((jpOut.fp = fopen(outFile, "wb")) == NULL)
+    {
+        fprintf(stderr, "jpeg_zoom: can't open %s\n", outFile);
+        fclose(jpIn.fp);
+        return;
+    }
+
+    // 编解码器初始化
+    jpIn.dinfo.err = jpeg_std_error(&jpIn.jerr);
+    jpOut.cinfo.err = jpeg_std_error(&jpOut.jerr);
+    jpeg_create_decompress(&jpIn.dinfo);
+    jpeg_create_compress(&jpOut.cinfo);
+
+    // 解析输入图片参数
+    jpeg_stdio_src(&jpIn.dinfo, jpIn.fp);
+    if (jpeg_read_header(&jpIn.dinfo, FALSE) != JPEG_HEADER_OK)
+    {
+        fprintf(stderr, "jpeg_zoom: jpeg_read_header failed \r\n");
+        goto end;
+    }
+
+    // 开始解码
+    if (jpeg_start_decompress(&jpIn.dinfo) == FALSE)
+    {
+        fprintf(stderr, "jpeg_zoom: jpeg_start_decompress failed \r\n");
+        goto end;
+    }
+
+    // 决定输出图片参数(一定要 jpeg_start_decompress 之后再查看dinfo参数)
+    jpeg_stdio_dest(&jpOut.cinfo, jpOut.fp);
+    jpOut.cinfo.image_width = (int)(jpIn.dinfo.output_width * zoom);
+    if (jpOut.cinfo.image_width < 1)
+        jpOut.cinfo.image_width = 1;
+    jpOut.cinfo.image_height = (int)(jpIn.dinfo.output_height * zoom);
+    if (jpOut.cinfo.image_height < 1)
+        jpOut.cinfo.image_height = 1;
+    jpOut.cinfo.input_components = jpIn.dinfo.output_components;
+    jpOut.cinfo.in_color_space = JCS_RGB; //压缩格式
+    jpeg_set_defaults(&jpOut.cinfo);
+    jpeg_set_quality(&jpOut.cinfo, quality, TRUE); //压缩质量
+
+    // 开始编码
+    jpeg_start_compress(&jpOut.cinfo, TRUE);
+
+    // 内存准备
+    rgbIn = (Jpeg_Rgb *)calloc(jpIn.dinfo.output_width * jpIn.dinfo.output_height, sizeof(Jpeg_Rgb));
+    rgbOutLine = (Jpeg_Rgb *)calloc(jpOut.cinfo.image_width, sizeof(Jpeg_Rgb));
+
+    // 读取输入整图
+    pRgb = rgbIn;
+    while (jpIn.dinfo.output_scanline < jpIn.dinfo.output_height)
+    {
+        jsampRow[0] = (JSAMPROW)pRgb;
+        jpeg_read_scanlines(&jpIn.dinfo, jsampRow, 1);
+        pRgb += jpIn.dinfo.output_width;
+    }
+
+    // 缩放准备
+    xDiv = (float)jpIn.dinfo.output_width / jpOut.cinfo.image_width;
+    yDiv = (float)jpIn.dinfo.output_height / jpOut.cinfo.image_height;
+
+    // 开始缩放
+    jsampRow[0] = (JSAMPROW)rgbOutLine; // 用于写jpeg行数据
+    for (y = 0, yStep = 0; y < jpOut.cinfo.image_height; y += 1, yStep += yDiv)
+    {
+        //最近y值 避免下面for循环中重复该乘法
+        ySrc = (int)(yStep)*jpIn.dinfo.output_width;
+        //行像素遍历
+        for (x = 0, xStep = 0; x < jpOut.cinfo.image_width; x += 1, xStep += xDiv)
+        {
+            rgbOutLine[x] = rgbIn[ySrc + (int)(xStep)];
+        }
+        //写入一行数据
+        jpeg_write_scanlines(&jpOut.cinfo, jsampRow, 1);
+    }
+
+    // 内存
+    free(rgbIn);
+    free(rgbOutLine);
+
+    // 结束编解码
+    jpeg_finish_decompress(&jpIn.dinfo);
+    jpeg_finish_compress(&jpOut.cinfo);
+
+end:
+
+    // 销毁编解码器
+    jpeg_destroy_decompress(&jpIn.dinfo);
+    jpeg_destroy_compress(&jpOut.cinfo);
+
+    fclose(jpOut.fp);
+    fclose(jpIn.fp);
 }
