@@ -11,7 +11,7 @@
  *      1: 使用 jpeg + zoom 流模式缩放(临近点插值、双线性插值)
  *      2: 使用 jpeg + zoom 整图加载多线程处理模式(临近点插值、双线性插值)
  */
-#define TEST_MODE 2
+#define TEST_MODE 0
 
 #include <sys/time.h>
 long getTickUs(void)
@@ -49,6 +49,7 @@ int main(int argc, char **argv)
     tickUs1 = getTickUs();
     //开始缩放
     jpeg_zoom(argv[1], "./out.jpg", zm, 75);
+    // jpeg_zoom2(argv[1], "./out.jpg", 75);
     //用时
     tickUs2 = getTickUs();
     printf("total time: %.3fms \r\n", (float)(tickUs2 - tickUs1) / 1000);

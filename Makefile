@@ -65,5 +65,6 @@ libjpeg: libtool
 	mkdir $(ROOT)/libs/man/man1 -p && \
 	make -j4 && make install && \
 	sed -i '/^#define JPEGLIB_H/a\#include <stddef.h>' ../include/jpeglib.h && \
+	rm $(ROOT)/libs/lib/libjpeg.so* && \
 	cd - && \
 	rm $(ROOT)/libs/jpeg-6b -rf

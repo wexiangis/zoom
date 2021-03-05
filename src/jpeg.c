@@ -402,7 +402,7 @@ void jpeg_zoom(char *inFile, char *outFile, float zoom, int quality)
     // 缩放分度格div及其增量计数
     float xStep, yStep, xDiv, yDiv;
     // 根据 xStep yStep 近似后定位到源图的位置
-    int ySrc;
+    int ySrc, ySrcLast;
     // 二维for循环计数
     int x, y;
 
@@ -484,18 +484,173 @@ void jpeg_zoom(char *inFile, char *outFile, float zoom, int quality)
 
     // 开始缩放
     jsampRow[0] = (JSAMPROW)rgbOutLine; // 用于写jpeg行数据
-    for (y = 0, yStep = 0; y < jpOut.cinfo.image_height; y += 1, yStep += yDiv)
+    for (y = 0, yStep = 0, ySrcLast = -1; y < jpOut.cinfo.image_height; y += 1, yStep += yDiv)
     {
-        //最近y值 避免下面for循环中重复该乘法
-        ySrc = (int)(yStep)*jpIn.dinfo.output_width;
-        //行像素遍历
-        for (x = 0, xStep = 0; x < jpOut.cinfo.image_width; x += 1, xStep += xDiv)
+        //最近y值
+        ySrc = (int)(yStep);
+        //同行比对,避免重复的行赋值
+        if (ySrc != ySrcLast)
         {
-            rgbOutLine[x] = rgbIn[ySrc + (int)(xStep)];
+            //更新比对值
+            ySrcLast = ySrc;
+            //避免下面for循环中重复该乘法
+            ySrc *= jpIn.dinfo.output_width;
+            //行像素遍历
+            for (x = 0, xStep = 0; x < jpOut.cinfo.image_width; x += 1, xStep += xDiv)
+            {
+                rgbOutLine[x] = rgbIn[ySrc + (int)(xStep)];
+            }
         }
         //写入一行数据
         jpeg_write_scanlines(&jpOut.cinfo, jsampRow, 1);
     }
+
+    // 内存
+    free(rgbIn);
+    free(rgbOutLine);
+
+    // 结束编解码
+    jpeg_finish_decompress(&jpIn.dinfo);
+    jpeg_finish_compress(&jpOut.cinfo);
+
+end:
+
+    // 销毁编解码器
+    jpeg_destroy_decompress(&jpIn.dinfo);
+    jpeg_destroy_compress(&jpOut.cinfo);
+
+    fclose(jpOut.fp);
+    fclose(jpIn.fp);
+}
+
+//固定放大2.5倍,且要求输入图像宽高为5的整数倍
+void jpeg_zoom2(char *inFile, char *outFile, int quality)
+{
+    Jpeg_Private jpIn;
+    Jpeg_Private jpOut;
+
+    //输入图片一次加载完
+    Jpeg_Rgb *rgbIn;
+    //输入图片每次写入一行
+    Jpeg_Rgb *rgbOutLine;
+    //公用指针
+    Jpeg_Rgb *pRgb, *pRgbTar;
+
+    // 二维for循环计数
+    int xDist;
+
+    JSAMPROW jsampRow[1];
+
+    // 参数检查
+    if (!inFile || !outFile || quality < 1 || quality > 100)
+    {
+        fprintf(stderr, "jpeg_zoom: param error !!\n");
+        return;
+    }
+
+    // 数据流IO准备
+    if ((jpIn.fp = fopen(inFile, "rb")) == NULL)
+    {
+        fprintf(stderr, "jpeg_zoom: can't open %s\n", inFile);
+        return;
+    }
+    if ((jpOut.fp = fopen(outFile, "wb")) == NULL)
+    {
+        fprintf(stderr, "jpeg_zoom: can't open %s\n", outFile);
+        fclose(jpIn.fp);
+        return;
+    }
+
+    // 编解码器初始化
+    jpIn.dinfo.err = jpeg_std_error(&jpIn.jerr);
+    jpOut.cinfo.err = jpeg_std_error(&jpOut.jerr);
+    jpeg_create_decompress(&jpIn.dinfo);
+    jpeg_create_compress(&jpOut.cinfo);
+
+    // 解析输入图片参数
+    jpeg_stdio_src(&jpIn.dinfo, jpIn.fp);
+    if (jpeg_read_header(&jpIn.dinfo, FALSE) != JPEG_HEADER_OK)
+    {
+        fprintf(stderr, "jpeg_zoom: jpeg_read_header failed \r\n");
+        goto end;
+    }
+
+    // 开始解码
+    if (jpeg_start_decompress(&jpIn.dinfo) == FALSE)
+    {
+        fprintf(stderr, "jpeg_zoom: jpeg_start_decompress failed \r\n");
+        goto end;
+    }
+
+    // 决定输出图片参数(一定要 jpeg_start_decompress 之后再查看dinfo参数)
+    jpeg_stdio_dest(&jpOut.cinfo, jpOut.fp);
+    jpOut.cinfo.image_width = (int)(jpIn.dinfo.output_width * 2.5);
+    jpOut.cinfo.image_height = (int)(jpIn.dinfo.output_height * 2.5);
+    jpOut.cinfo.input_components = jpIn.dinfo.output_components;
+    jpOut.cinfo.in_color_space = JCS_RGB; //压缩格式
+    jpeg_set_defaults(&jpOut.cinfo);
+    jpeg_set_quality(&jpOut.cinfo, quality, TRUE); //压缩质量
+
+    // 开始编码
+    jpeg_start_compress(&jpOut.cinfo, TRUE);
+
+    // 内存准备
+    rgbIn = (Jpeg_Rgb *)calloc(jpIn.dinfo.output_width * jpIn.dinfo.output_height, sizeof(Jpeg_Rgb));
+    rgbOutLine = (Jpeg_Rgb *)calloc(jpOut.cinfo.image_width, sizeof(Jpeg_Rgb));
+
+    // 读取输入整图
+    pRgb = rgbIn;
+    while (jpIn.dinfo.output_scanline < jpIn.dinfo.output_height)
+    {
+        jsampRow[0] = (JSAMPROW)pRgb;
+        jpeg_read_scanlines(&jpIn.dinfo, jsampRow, 1);
+        pRgb += jpIn.dinfo.output_width;
+    }
+
+    // 开始缩放
+    jsampRow[0] = (JSAMPROW)rgbOutLine; // 用于写jpeg行数据
+    pRgb = rgbIn;
+    pRgbTar = rgbIn + (jpIn.dinfo.output_width * jpIn.dinfo.output_height);
+    do
+    {
+        //拷贝一行数据
+        xDist = 0;
+        do
+        {
+            // step += div, div = 0.4, step = 0.0/0.4/0.8, 即原图复用3次这个点
+            rgbOutLine[xDist++] = *pRgb;
+            rgbOutLine[xDist++] = *pRgb;
+            rgbOutLine[xDist++] = *pRgb++;
+            // step += div, div = 0.4, step = 1.2/1.6, 即原图复用2次这个点
+            rgbOutLine[xDist++] = *pRgb;
+            rgbOutLine[xDist++] = *pRgb++;
+        }
+        while (xDist < jpOut.cinfo.image_width);
+
+        //写3行数据 step += div, div = 0.4, step = 0.0/0.4/0.8, 即原图复用3次该行
+        jpeg_write_scanlines(&jpOut.cinfo, jsampRow, 1);
+        jpeg_write_scanlines(&jpOut.cinfo, jsampRow, 1);
+        jpeg_write_scanlines(&jpOut.cinfo, jsampRow, 1);
+
+        //拷贝一行数据
+        xDist = 0;
+        do
+        {
+            // step += div, div = 0.4, step = 0.0/0.4/0.8, 即原图复用3次这个点
+            rgbOutLine[xDist++] = *pRgb;
+            rgbOutLine[xDist++] = *pRgb;
+            rgbOutLine[xDist++] = *pRgb++;
+            // step += div, div = 0.4, step = 1.2/1.6, 即原图复用2次这个点
+            rgbOutLine[xDist++] = *pRgb;
+            rgbOutLine[xDist++] = *pRgb++;
+        }
+        while (xDist < jpOut.cinfo.image_width);
+
+        //写2行数据 step += div, div = 0.4, step = 1.2/1.6, 即原图复用2次该行
+        jpeg_write_scanlines(&jpOut.cinfo, jsampRow, 1);
+        jpeg_write_scanlines(&jpOut.cinfo, jsampRow, 1);
+    }
+    while (pRgb < pRgbTar);
 
     // 内存
     free(rgbIn);

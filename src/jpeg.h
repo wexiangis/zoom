@@ -72,4 +72,7 @@ void jpeg_closeLine(void *jp);
  */
 void jpeg_zoom(char *inFile, char *outFile, float zoom, int quality);
 
+//固定放大2.5倍,且要求输入图像宽高为5的整数倍
+void jpeg_zoom2(char *inFile, char *outFile, int quality);
+
 #endif
